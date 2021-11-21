@@ -1,0 +1,125 @@
+plugins {
+	id 'application'
+	id 'edu.sc.seis.launch4j' version '2.5.1'
+	id 'com.github.johnrengelman.shadow' version '7.1.0'
+	id 'org.beryx.runtime' version '1.12.7'
+}
+
+dependencies {
+	implementation(project(':jadx-core'))
+
+	implementation(project(":jadx-cli"))
+	implementation 'com.beust:jcommander:1.81'
+	implementation 'ch.qos.logback:logback-classic:1.2.7'
+
+	implementation 'com.fifesoft:rsyntaxtextarea:3.1.3'
+	implementation files('libs/jfontchooser-1.0.5.jar')
+	implementation 'hu.kazocsaba:image-viewer:1.2.3'
+
+	implementation 'com.formdev:flatlaf:1.6.4'
+	implementation 'com.formdev:flatlaf-intellij-themes:1.6.4'
+	implementation 'com.formdev:flatlaf-extras:1.6.4'
+	implementation 'com.formdev:svgSalamander:1.1.2.4'
+
+	implementation 'com.google.code.gson:gson:2.8.9'
+	implementation 'org.apache.commons:commons-lang3:3.12.0'
+	implementation 'org.apache.commons:commons-text:1.9'
+
+	implementation 'io.reactivex.rxjava2:rxjava:2.2.21'
+	implementation "com.github.akarnokd:rxjava2-swing:0.3.7"
+	implementation 'com.android.tools.build:apksig:4.2.1'
+	implementation 'io.github.hqktech:jdwp:1.0'
+}
+
+application {
+	applicationName = 'jadx-gui'
+	mainClass.set('jadx.gui.JadxGUI')
+}
+
+applicationDistribution.with {
+	into('') {
+		from '../'
+		include 'README.md'
+		include 'NOTICE'
+		include 'LICENSE'
+	}
+}
+
+jar {
+	manifest {
+		attributes(
+				"Main-Class": application.mainClass.get(),
+				"Class-Path": configurations.runtimeClasspath.collect { it.getName() }.join(' ')
+		)
+	}
+}
+
+shadow {
+	mainClassName = application.mainClass.get()
+}
+shadowJar {
+	mergeServiceFiles()
+}
+
+startScripts {
+	// The option -XX:+UseG1GC is only relevant for Java 8. Starting with Java 9 G1GC is already the default GC
+	defaultJvmOpts = ['-Xms128M', '-Xmx4g', '-Dawt.useSystemAAFontSettings=lcd', '-Dswing.aatext=true', '-XX:+UseG1GC']
+	doLast {
+		def str = windowsScript.text
+		str = str.replaceAll('java.exe', 'javaw.exe')
+		str = str.replaceAll('"%JAVA_EXE%" %DEFAULT_JVM_OPTS%', 'start "jadx-gui" /B "%JAVA_EXE%" %DEFAULT_JVM_OPTS%')
+		windowsScript.text = str
+	}
+}
+
+launch4j {
+	mainClassName = application.mainClass.get()
+	copyConfigurable = project.tasks.shadowJar.outputs.files
+	jarTask = project.tasks.shadowJar
+	icon = "${projectDir}/src/main/resources/logos/jadx-logo.ico"
+	outfile = "jadx-gui-${version}.exe"
+	copyright = 'Skylot'
+	windowTitle = 'jadx'
+	companyName = 'jadx'
+	jreMinVersion = '11'
+	jvmOptions = ['-Dawt.useSystemAAFontSettings=lcd', '-Dswing.aatext=true', '-XX:+UseG1GC']
+	jreRuntimeBits = "64"
+	bundledJre64Bit = true
+	initialHeapPercent = 5
+	maxHeapSize = 4096
+	maxHeapPercent = 70
+	downloadUrl = 'https://www.oracle.com/java/technologies/downloads/#jdk17-windows'
+	bundledJrePath = project.hasProperty("bundleJRE") ? '%EXEDIR%/jre' : '%JAVA_HOME%'
+}
+
+runtime {
+	addOptions('--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages')
+	addModules(
+			'java.desktop',
+			'java.naming',
+			'java.sql', // TODO: GSON register adapter for java.sql.Time
+			'java.xml',
+	)
+	jpackage {
+		imageOptions = ['--icon', "${projectDir}/src/main/resources/logos/jadx-logo.ico"]
+		skipInstaller = true
+		targetPlatformName = "win"
+	}
+	launcher {
+		noConsole = true
+	}
+}
+
+task distWinWithJre(type: Zip, dependsOn: ['runtime', 'createExe']) {
+	group 'jadx'
+	destinationDirectory = buildDir
+	archiveFileName = "jadx-gui-${jadxVersion}-with-jre-win.zip"
+	from(runtime.jreDir) {
+		include '**/*'
+		into 'jre'
+	}
+	from(createExe.outputs) {
+		include '*.exe'
+	}
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
